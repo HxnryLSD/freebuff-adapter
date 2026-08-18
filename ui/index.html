@@ -245,6 +245,25 @@
   .flash.show { display: block; }
   .flash.err { border-color: var(--bright); }
 
+  /* ---- updater card (desktop shell only) ---- */
+  .update-card {
+    position: fixed;
+    right: 14px;
+    bottom: 14px;
+    width: 280px;
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    padding: 10px 12px;
+    font-size: 12px;
+    z-index: 61;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+  }
+  .update-card .u-title { color: var(--bright); letter-spacing: 1px; margin-bottom: 6px; }
+  .update-card .u-line { color: var(--text); margin-bottom: 8px; word-break: break-word; }
+  .update-bar { height: 4px; background: var(--border2); margin-bottom: 8px; }
+  .update-bar > div { height: 100%; width: 0; background: var(--bright); transition: width 0.3s; }
+  .update-card button { width: 100%; }
+
   /* ---- help overlay ---- */
   .help-box {
     border: 1px solid var(--border);
@@ -337,6 +356,13 @@
 </main>
 
 <div class="flash" id="flash"></div>
+
+<div class="update-card" id="updateCard" hidden>
+  <div class="u-title" id="updateTitle"></div>
+  <div class="u-line" id="updateLine"></div>
+  <div class="update-bar"><div id="updateBarFill"></div></div>
+  <button id="updateRestartBtn" hidden>RESTART NOW</button>
+</div>
 
 <div class="overlay" id="helpOverlay">
   <div class="help-box">
@@ -697,6 +723,71 @@ function flash(msg, isError = true) {
   el.classList.add('show')
   clearTimeout(flashTimer)
   flashTimer = setTimeout(() => el.classList.remove('show'), 4000)
+}
+
+// ---------- updater (desktop shell only) ----------
+// The Electron shell bridges electron-updater events through
+// window.freebuffUpdater (see desktop/preload.js). In a plain browser the
+// bridge is absent and this whole section is inert.
+const updateCard = $('updateCard')
+const updateTitle = $('updateTitle')
+const updateLine = $('updateLine')
+const updateBarFill = $('updateBarFill')
+const updateRestartBtn = $('updateRestartBtn')
+let updateVersion = null
+
+function fmtBytes(n) {
+  if (n == null || Number.isNaN(n)) return ''
+  const mb = n / 1024 / 1024
+  return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb.toFixed(1)} MB`
+}
+
+function showUpdateCard(title, line, percent) {
+  updateTitle.textContent = title
+  updateLine.textContent = line
+  updateBarFill.style.width = `${percent}%`
+  updateCard.hidden = false
+}
+
+function hideUpdateCard() {
+  updateCard.hidden = true
+  updateRestartBtn.hidden = true
+}
+
+function handleUpdaterEvent(evt) {
+  switch (evt.type) {
+    case 'available':
+      updateVersion = evt.version
+      showUpdateCard(`UPDATE v${evt.version}`, 'Downloading…', 0)
+      break
+    case 'progress':
+      showUpdateCard(
+        `UPDATE v${updateVersion || '…'}`,
+        `${evt.percent}% — ${fmtBytes(evt.transferred)} / ${fmtBytes(evt.total)}`,
+        evt.percent,
+      )
+      break
+    case 'downloaded':
+      updateVersion = evt.version
+      showUpdateCard(`UPDATE v${evt.version} READY`, 'Restart to apply the update.', 100)
+      updateRestartBtn.hidden = false
+      break
+    case 'error':
+      hideUpdateCard()
+      flash(`! update failed — ${evt.message}`)
+      break
+    case 'not-available':
+      hideUpdateCard()
+      if (evt.manual) flash('You are up to date.', false)
+      break
+  }
+}
+
+if (window.freebuffUpdater) {
+  window.freebuffUpdater.onEvent(handleUpdaterEvent)
+  updateRestartBtn.addEventListener('click', () => {
+    if (window.freebuffUpdater) window.freebuffUpdater.quitAndInstall()
+  })
 }
 
 async function api(path, method = 'POST', body) {

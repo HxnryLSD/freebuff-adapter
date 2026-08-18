@@ -54,18 +54,25 @@ jobs:
       # Unsigned build. The installers are distributed as-is; Windows
       # SmartScreen will warn on install. See the README for the free-OSS
       # SignPath option if you want a real signature without paying.
+      # --publish never: the electron-builder `publish` config exists so that
+      # latest.yml + app-update.yml are generated, but the upload happens via
+      # softprops below — without this flag electron-builder would try to
+      # publish the release itself on a git tag and conflict with it.
       - name: Build installer(s)
         working-directory: desktop
         env:
           # No code-signing cert in CI: prevent electron-builder from
           # attempting to discover/use one from the runner's cert store.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npm run dist
+        run: npm run dist -- --publish never
 
+      # latest.yml is the update manifest electron-updater fetches to find the
+      # newest version + installer; it must sit next to the exe in the release.
       - name: Attach artifacts to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             desktop/dist/*.exe
             desktop/dist/*.blockmap
+            desktop/dist/latest.yml
           generate_release_notes: true

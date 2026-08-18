@@ -17,13 +17,17 @@
  *   npm start -- --screenshot shot.png   # capture the UI and exit (CI/verify)
  */
 
-const { app, BrowserWindow, Menu, shell, dialog } = require('electron')
+const { app, BrowserWindow, Menu, shell, dialog, ipcMain } = require('electron')
 const { spawn } = require('node:child_process')
 const http = require('node:http')
 const path = require('node:path')
 const fs = require('node:fs')
 
 const { ensureIcon } = require('./icon')
+// electron-updater (not Electron's built-in autoUpdater — this one supports
+// GitHub Releases + NSIS differential updates). Only active when packaged;
+// dev runs (npm start) never touch it.
+const { autoUpdater } = require('electron-updater')
 
 const HOST = process.env.HOST || process.env.FREEBUFF_HOST || '127.0.0.1'
 // Sanitize: an ambient/empty/invalid PORT (e.g. "0") must not pick a random
@@ -163,6 +167,135 @@ function shutdown() {
   }
 }
 
+// ---- auto-update (electron-updater, packaged builds only) ----------------
+
+let updateCheckedManually = false
+
+/** Forward an updater event to the UI (it renders the progress card/toast). */
+function sendUpdater(evt) {
+  if (win && !win.isDestroyed()) win.webContents.send('updater:event', evt)
+}
+
+/**
+ * Wire the GitHub Releases updater. Only called when app.isPackaged: dev
+ * builds have no app-update.yml and must not hit the network for updates.
+ * Checks silently on startup (auto-download), prompts to restart once the
+ * new version is downloaded, and exposes a manual check via the File menu.
+ */
+function setupAutoUpdater() {
+  // FREEBUFF_UPDATER_DEV=1 lets dev runs exercise the full event → IPC → UI
+  // path (they fail fast with an app-update.yml error instead of checking
+  // the network). Normal dev runs never touch the updater.
+  if (!app.isPackaged && !process.env.FREEBUFF_UPDATER_DEV) return
+
+  // Dev runs have no app-update.yml, so the check fails fast — exactly what
+  // the hook wants (it exercises the full event → IPC → UI path).
+  if (!app.isPackaged) autoUpdater.forceDevUpdateConfig = true
+
+  autoUpdater.autoDownload = true
+  autoUpdater.autoInstallOnAppQuit = true
+  autoUpdater.logger = {
+    info: (m) => log('updater:', m),
+    warn: (m) => log('updater warn:', m),
+    error: (m) => log('updater ERR:', m),
+    debug: (m) => log('updater debug:', m),
+  }
+
+  autoUpdater.on('error', (err) => {
+    log('update check failed:', err.message)
+    sendUpdater({ type: 'error', message: err.message })
+    if (updateCheckedManually && win) {
+      dialog.showErrorBox('Freebuff Adapter', `Could not check for updates:\n${err.message}`)
+    }
+    updateCheckedManually = false
+  })
+
+  autoUpdater.on('update-available', (info) => {
+    log(`update available: v${info.version} — downloading`)
+    sendUpdater({ type: 'available', version: info.version })
+  })
+
+  autoUpdater.on('update-not-available', () => {
+    log('no update available')
+    sendUpdater({ type: 'not-available', manual: updateCheckedManually })
+    if (updateCheckedManually && win) {
+      dialog.showMessageBox(win, {
+        type: 'info',
+        title: 'Freebuff Adapter',
+        message: 'You are up to date.',
+        detail: `v${app.getVersion()} is the latest version.`,
+        buttons: ['OK'],
+      })
+    }
+    updateCheckedManually = false
+  })
+
+  autoUpdater.on('download-progress', (p) => {
+    sendUpdater({
+      type: 'progress',
+      percent: Math.round(p.percent),
+      transferred: p.transferred,
+      total: p.total,
+    })
+    if (p.percent % 25 < 2) log(`update download: ${Math.round(p.percent)}%`)
+  })
+
+  autoUpdater.on('update-downloaded', (info) => {
+    log(`update downloaded: v${info.version}`)
+    if (win && !win.isDestroyed()) {
+      // The UI shows a ready-to-install toast with a Restart button.
+      sendUpdater({ type: 'downloaded', version: info.version })
+      return
+    }
+    // No live window — fall back to a dialog so the update isn't silent.
+    dialog
+      .showMessageBox({
+        type: 'info',
+        title: 'Freebuff Adapter',
+        message: `Version v${info.version} is ready to install.`,
+        detail: 'Restart now to apply the update.',
+        buttons: ['Restart now', 'Later'],
+        defaultId: 0,
+        cancelId: 1,
+      })
+      .then(({ response }) => {
+        if (response === 0) autoUpdater.quitAndInstall()
+      })
+      .catch(() => {})
+  })
+
+  // UI "RESTART NOW" button → quit and install the downloaded update.
+  ipcMain.on('updater:quit-and-install', () => {
+    if (app.isPackaged) autoUpdater.quitAndInstall()
+  })
+
+  // Check shortly after startup so the window is up and the daemon is warm.
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch((err) => log('update check failed:', err.message))
+  }, 5000)
+}
+
+/** Manual "Check for Updates…" — surfaces results via dialog. */
+function checkForUpdates() {
+  if (!app.isPackaged) {
+    if (win) {
+      dialog.showMessageBox(win, {
+        type: 'info',
+        title: 'Freebuff Adapter',
+        message: 'Updates only work in installed builds.',
+        detail: 'Run the installer or portable exe to enable auto-updates.',
+        buttons: ['OK'],
+      })
+    }
+    return
+  }
+  updateCheckedManually = true
+  autoUpdater.checkForUpdates().catch((err) => {
+    updateCheckedManually = false
+    log('update check failed:', err.message)
+  })
+}
+
 // ---- window --------------------------------------------------------------
 
 function createWindow() {
@@ -180,6 +313,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      preload: path.join(__dirname, 'preload.js'),
     },
   })
   win.once('ready-to-show', () => win.show())
@@ -236,6 +370,7 @@ if (!gotLock) {
         label: 'File',
         submenu: [
           { label: 'Reload', accelerator: 'CmdOrCtrl+R', click: () => win?.webContents.reload() },
+          { label: 'Check for Updates…', click: () => checkForUpdates() },
           { type: 'separator' },
           { role: 'quit' },
         ],
@@ -257,6 +392,7 @@ if (!gotLock) {
 
   app.whenReady().then(async () => {
     ensureIcon() // best-effort: ships in the package, so normally a no-op
+    setupAutoUpdater()
     const alreadyUp = await checkHealth(2000)
     if (alreadyUp) {
       log(`daemon already running on ${HOST}:${PORT} — attaching (shell does not own it)`)

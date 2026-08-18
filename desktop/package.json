@@ -36,6 +36,11 @@
     "directories": {
       "output": "dist"
     },
+    "publish": {
+      "provider": "github",
+      "owner": "HxnryLSD",
+      "repo": "freebuff-adapter"
+    },
     "win": {
       "target": [
         "nsis",
@@ -52,6 +57,9 @@
       "createDesktopShortcut": true,
       "shortcutName": "Freebuff Adapter"
     }
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   },
   "devDependencies": {
     "electron": "^43.4.0",
