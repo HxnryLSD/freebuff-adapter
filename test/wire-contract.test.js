@@ -377,7 +377,7 @@ test('loginCode honors Retry-After on 429 and succeeds after retry', async () =>
   })
   try {
     const out = await clientFor(baseUrl).loginCode('fp')
-    assert.equal(out.loginUrl.startsWith('https://freebuff.com'), true)
+    assert.equal(out.loginUrl, 'https://freebuff.com/auth/cli?x=1')
     assert.equal(calls, 2)
   } finally {
     server.close()
