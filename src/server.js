@@ -214,7 +214,9 @@ class Server {
     // so only non-loopback peers are required to authenticate.
     if (isLoopback(req)) return true
     const auth = req.headers.authorization || ''
-    const match = /^Bearer\s+(.+)$/.exec(auth)
+    // \S+ (not .+) keeps \s+ and the token disjoint, so the regex cannot
+    // re-split the whitespace run quadratically on crafted headers (ReDoS).
+    const match = /^Bearer\s+(\S+)$/.exec(auth)
     if (match && match[1] === this.config.proxyKey) return true
     // Anthropic SDKs may send the key via x-api-key instead of Bearer.
     return req.headers['x-api-key'] === this.config.proxyKey
