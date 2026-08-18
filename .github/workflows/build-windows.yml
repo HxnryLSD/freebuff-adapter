@@ -26,12 +26,20 @@ jobs:
       # electron's postinstall and electron-builder's winCodeSign/NSIS
       # tooling both cache downloads here; without this every build would
       # re-download ~100 MB of Electron.
+      # LOCALAPPDATA is a runner machine env var, not one GitHub exposes in
+      # the `env` context — capture it in a shell step (where it IS set) and
+      # reference it via step outputs.
+      - name: Resolve LOCALAPPDATA
+        id: localappdata
+        shell: pwsh
+        run: echo "path=$env:LOCALAPPDATA" >> $env:GITHUB_OUTPUT
+
       - name: Cache Electron & electron-builder downloads
         uses: actions/cache@v4
         with:
           path: |
-            ${{ env.LOCALAPPDATA }}\electron\Cache
-            ${{ env.LOCALAPPDATA }}\electron-builder\Cache
+            ${{ steps.localappdata.outputs.path }}\electron\Cache
+            ${{ steps.localappdata.outputs.path }}\electron-builder\Cache
           key: electron-cache-${{ runner.os }}-${{ hashFiles('desktop/package.json') }}
           restore-keys: |
             electron-cache-${{ runner.os }}-
