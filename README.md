@@ -105,7 +105,8 @@ check + full test suite on every push/PR (Node 18/20/22 × Linux/Windows).
 `.github/workflows/build-windows.yml` builds on `windows-latest` (daemon tests
 → `npm run dist`) and attaches the installer + portable exe to a GitHub
 Release for that tag. Run it manually via the workflow's *Run workflow*
-button if you just want artifacts without a tag.
+button: fill in `tag_name` (e.g. `v0.1.0`) to publish a Release, or leave it
+empty to just build and download the installers from the run's artifacts.
 
 **Signing:** the build produces **unsigned** installers — Windows SmartScreen
 will show its "unknown publisher" warning on install. Code-signing

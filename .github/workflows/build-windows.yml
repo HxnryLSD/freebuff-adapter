@@ -5,6 +5,13 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag_name:
+        description: >-
+          Release tag (e.g. v0.1.0). Required to publish a GitHub Release from
+          a manual run; leave empty to just build and upload the artifacts.
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -18,10 +25,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # electron 43 requires Node >= 22.12 (npm warns EBADENGINE otherwise),
+      # and 22 matches the top of the CI matrix in ci.yml.
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       # electron's postinstall and electron-builder's winCodeSign/NSIS
       # tooling both cache downloads here; without this every build would
@@ -68,11 +77,29 @@ jobs:
 
       # latest.yml is the update manifest electron-updater fetches to find the
       # newest version + installer; it must sit next to the exe in the release.
+      # softprops/action-gh-release v2 hard-fails on a branch ref without a
+      # tag_name, so only run it on a tag push or when the manual run supplies
+      # a tag. Tag pushes use github.ref_name; manual runs use the input.
       - name: Attach artifacts to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/') || inputs.tag_name != ''
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.tag_name != '' && inputs.tag_name || github.ref_name }}
           files: |
             desktop/dist/*.exe
             desktop/dist/*.blockmap
             desktop/dist/latest.yml
           generate_release_notes: true
+
+      # Manual run without a tag: keep the artifacts downloadable from the
+      # Actions run instead of failing the workflow.
+      - name: Upload build artifacts
+        if: ${{ !(startsWith(github.ref, 'refs/tags/') || inputs.tag_name != '') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: freebuff-adapter-windows
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/*.blockmap
+            desktop/dist/latest.yml
+          if-no-files-found: error
