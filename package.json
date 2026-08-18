@@ -1,0 +1,28 @@
+{
+  "name": "freebuff-adapter",
+  "version": "0.1.0",
+  "description": "Local Freebuff daemon: device-code login, session admission, ad impressions, and an OpenAI-compatible /v1/chat/completions proxy with a monochrome dark UI ad viewer.",
+  "type": "commonjs",
+  "main": "src/index.js",
+  "bin": {
+    "freebuff-adapter": "src/index.js"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "desktop": "npm --prefix desktop run start --",
+    "dist:desktop": "npm --prefix desktop run dist --",
+    "mock": "FREEBUFF_MOCK=1 node src/index.js",
+    "check": "node --check src/index.js && node --check src/server.js && node --check src/daemon.js && node --check src/freebuff.js && node --check src/bus.js && node --check src/store.js && node --check src/fingerprint.js && node --check src/mock.js && node --check src/anthropic.js",
+    "test": "node --test",
+    "test:live": "node --test test/live.e2e.test.js"
+  },
+  "license": "MIT",
+  "files": [
+    "src",
+    "ui",
+    "README.md"
+  ]
+}

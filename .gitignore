@@ -1,0 +1,10 @@
+node_modules/
+*.log
+.DS_Store
+
+# desktop shell generated artifacts
+/desktop/node_modules/
+/desktop/icon.png
+/desktop/*.png
+/desktop/package-lock.json
+/desktop/dist/

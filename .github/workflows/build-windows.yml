@@ -1,0 +1,63 @@
+name: Build Windows Installer
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build & release (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # electron's postinstall and electron-builder's winCodeSign/NSIS
+      # tooling both cache downloads here; without this every build would
+      # re-download ~100 MB of Electron.
+      - name: Cache Electron & electron-builder downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.LOCALAPPDATA }}\electron\Cache
+            ${{ env.LOCALAPPDATA }}\electron-builder\Cache
+          key: electron-cache-${{ runner.os }}-${{ hashFiles('desktop/package.json') }}
+          restore-keys: |
+            electron-cache-${{ runner.os }}-
+
+      - name: Run daemon tests
+        run: npm test
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+
+      # Unsigned build. The installers are distributed as-is; Windows
+      # SmartScreen will warn on install. See the README for the free-OSS
+      # SignPath option if you want a real signature without paying.
+      - name: Build installer(s)
+        working-directory: desktop
+        env:
+          # No code-signing cert in CI: prevent electron-builder from
+          # attempting to discover/use one from the runner's cert store.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm run dist
+
+      - name: Attach artifacts to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            desktop/dist/*.exe
+            desktop/dist/*.blockmap
+          generate_release_notes: true

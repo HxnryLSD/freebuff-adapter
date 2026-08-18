@@ -1,0 +1,63 @@
+{
+  "name": "freebuff-adapter-desktop",
+  "version": "0.1.0",
+  "description": "Electron shell for Freebuff Adapter: auto-starts the local daemon and opens the monochrome dark UI window.",
+  "main": "main.js",
+  "author": "Freebuff Adapter",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "screenshot": "electron . --screenshot screenshot.png",
+    "predist": "node icon.js",
+    "dist": "electron-builder"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "build": {
+    "appId": "com.freebuff.adapter",
+    "productName": "Freebuff Adapter",
+    "asar": true,
+    "files": [
+      "main.js",
+      "icon.js",
+      "icon.png"
+    ],
+    "extraResources": [
+      {
+        "from": "..",
+        "to": "daemon",
+        "filter": [
+          "src/**/*",
+          "ui/**/*"
+        ]
+      }
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "icon.png"
+    },
+    "portable": {
+      "artifactName": "${productName} Portable ${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Freebuff Adapter"
+    }
+  },
+  "devDependencies": {
+    "electron": "^37.0.0",
+    "electron-builder": "^26.15.3"
+  },
+  "allowScripts": {
+    "electron@37.10.3": true
+  }
+}

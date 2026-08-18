@@ -1,0 +1,888 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Freebuff Adapter</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%230a0a0a'/><rect x='3' y='3' width='10' height='10' fill='none' stroke='%23f2f2f2' stroke-width='1.5'/><text x='8' y='11.5' font-family='monospace' font-size='9' fill='%23f2f2f2' text-anchor='middle'>F</text></svg>">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --panel: #101010;
+    --panel2: #151515;
+    --border: #262626;
+    --border2: #1d1d1d;
+    --text: #c9c9c9;
+    --bright: #f2f2f2;
+    --dim: #6f6f6f;
+    --faint: #454545;
+    --error: #ffffff; /* monochrome: errors are bold white with a ! marker */
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Cascadia Mono", "Liberation Mono", monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: #2c2c2c; }
+  ::-webkit-scrollbar-thumb:hover { background: #3a3a3a; }
+
+  /* ---- header ---- */
+  header {
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    padding: 8px 12px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+  }
+  .brand { font-size: 15px; font-weight: 700; letter-spacing: 1px; color: var(--bright); }
+  .brand small { font-weight: 400; color: var(--dim); letter-spacing: 0; margin-left: 6px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; align-items: center; }
+  .chip {
+    border: 1px solid var(--border);
+    background: var(--panel2);
+    padding: 2px 8px;
+    font-size: 11px;
+    white-space: nowrap;
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .chip b { color: var(--bright); font-weight: 600; }
+  .chip.ok b { color: var(--bright); }
+  .chip.bad b { color: var(--bright); text-decoration: underline; }
+  .controls { display: flex; gap: 6px; align-items: center; }
+
+  select, button, input {
+    background: var(--panel2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    font-family: inherit;
+    font-size: 12px;
+    padding: 3px 8px;
+    cursor: pointer;
+    outline: none;
+  }
+  select:focus, button:focus, input:focus { border-color: var(--faint); }
+  button:hover:not(:disabled) { background: #1d1d1d; color: var(--bright); }
+  button:disabled { opacity: 0.4; cursor: default; }
+  button.primary { background: var(--bright); color: #0a0a0a; font-weight: 700; }
+  button.primary:hover:not(:disabled) { background: #ffffff; }
+  input[type="text"], input[type="search"] { cursor: text; }
+
+  /* ---- main grid ---- */
+  main {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1.55fr 1fr;
+    min-height: 0;
+  }
+  .left { display: flex; flex-direction: column; min-width: 0; border-right: 1px solid var(--border); }
+  .right { display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
+
+  /* ---- tabs ---- */
+  .tabs { display: flex; border-bottom: 1px solid var(--border); background: var(--panel); }
+  .tab {
+    padding: 6px 14px;
+    font-size: 12px;
+    border-right: 1px solid var(--border2);
+    cursor: pointer;
+    color: var(--dim);
+    user-select: none;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { background: var(--bg); color: var(--bright); box-shadow: inset 0 -2px 0 var(--bright); }
+  .tab .count { color: var(--faint); margin-left: 4px; }
+  .tab.active .count { color: var(--dim); }
+  .pane { flex: 1; overflow-y: auto; padding: 8px 10px; display: none; }
+  .pane.active { display: block; }
+
+  @media (max-width: 860px) {
+    main { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+    .left { border-right: none; border-bottom: 1px solid var(--border); }
+  }
+
+  /* ---- console lines ---- */
+  .line {
+    padding: 1px 0;
+    border-bottom: 1px solid #131313;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .line .t { color: var(--faint); margin-right: 8px; }
+  .line .lvl { margin-right: 8px; }
+  .line.info .lvl { color: var(--dim); }
+  .line.debug .lvl { color: var(--faint); }
+  .line.warn { color: var(--text); }
+  .line.warn .lvl { color: var(--bright); font-weight: 700; }
+  .line.error { color: var(--bright); font-weight: 700; }
+  .line.error .lvl { color: var(--bright); }
+  .line .data { color: var(--dim); font-size: 12px; }
+  .empty { color: var(--faint); padding: 10px 0; }
+
+  /* ---- reports ---- */
+  .report .name { font-weight: 700; color: var(--bright); }
+  .report .fields { color: var(--dim); }
+
+  /* ---- tasks ---- */
+  .task { padding: 3px 0; border-bottom: 1px solid #131313; }
+  .task .tname { color: var(--text); }
+  .task .tstatus { margin-left: 8px; }
+  .task.running .tstatus { color: var(--dim); }
+  .task.done .tstatus { color: var(--dim); }
+  .task.error .tstatus { color: var(--bright); font-weight: 700; }
+  .task .tdetail { color: var(--dim); font-size: 12px; }
+  .task .tm { color: var(--faint); font-size: 11px; margin-left: 6px; }
+
+  /* ---- ad viewer ---- */
+  .right h2 {
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: var(--dim);
+    padding: 8px 12px 6px;
+    border-bottom: 1px solid var(--border2);
+    text-transform: uppercase;
+  }
+  .ads { flex: 1; overflow-y: auto; padding: 8px 12px; display: flex; flex-direction: column; gap: 8px; }
+  .ad-card {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    padding: 10px 12px;
+  }
+  .ad-card .ad-title { font-weight: 700; color: var(--bright); margin-bottom: 4px; }
+  .ad-card .ad-text { color: var(--text); margin-bottom: 8px; }
+  .ad-card .ad-actions { display: flex; align-items: center; gap: 10px; }
+  .ad-card .ad-meta { font-size: 11px; color: var(--dim); }
+  .ad-card .ad-meta .ok { color: var(--text); }
+  .ad-none { color: var(--faint); padding: 12px; }
+
+  /* ---- proxy info / chat ---- */
+  .proxy {
+    border-top: 1px solid var(--border);
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+  .proxy .row { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+  .proxy .row .k { color: var(--dim); min-width: 92px; }
+  .proxy code { color: var(--bright); background: var(--panel2); border: 1px solid var(--border2); padding: 1px 6px; }
+  .chat { border-top: 1px solid var(--border); padding: 8px 12px; }
+  .chat .chat-row { display: flex; gap: 6px; }
+  .chat input { flex: 1; }
+  .chat-out {
+    margin-top: 6px;
+    border: 1px solid var(--border2);
+    background: var(--panel);
+    padding: 8px;
+    min-height: 64px;
+    max-height: 200px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 12px;
+    color: var(--text);
+  }
+  .chat-out .meta { color: var(--dim); font-size: 11px; }
+  .chat-out .stream { color: var(--bright); }
+
+  /* ---- login overlay ---- */
+  .overlay {
+    position: fixed; inset: 0;
+    background: rgba(5,5,5,0.92);
+    display: none;
+    align-items: center; justify-content: center;
+    z-index: 50;
+  }
+  .overlay.visible { display: flex; }
+  .login-box {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    width: min(640px, 92vw);
+    padding: 24px;
+  }
+  .login-box h1 { font-size: 16px; color: var(--bright); letter-spacing: 1px; margin-bottom: 12px; }
+  .login-box p { color: var(--dim); margin-bottom: 12px; }
+  .login-url {
+    display: block;
+    border: 1px solid var(--border);
+    background: var(--panel2);
+    padding: 10px;
+    color: var(--bright);
+    word-break: break-all;
+    margin-bottom: 12px;
+    font-size: 12px;
+  }
+  .login-actions { display: flex; gap: 8px; }
+  .login-wait { color: var(--dim); margin-top: 12px; font-size: 12px; }
+  .pulse::after { content: "▮"; animation: blink 1s steps(2) infinite; margin-left: 4px; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ---- action feedback ---- */
+  .flash {
+    position: fixed;
+    left: 50%;
+    bottom: 14px;
+    transform: translateX(-50%);
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    color: var(--bright);
+    padding: 5px 12px;
+    font-size: 12px;
+    max-width: 80vw;
+    display: none;
+    z-index: 60;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+  }
+  .flash.show { display: block; }
+  .flash.err { border-color: var(--bright); }
+
+  /* ---- help overlay ---- */
+  .help-box {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    width: min(640px, 92vw);
+    max-height: 86vh;
+    overflow-y: auto;
+    padding: 24px;
+  }
+  .help-box h1 { font-size: 16px; color: var(--bright); letter-spacing: 1px; margin-bottom: 14px; }
+  .help-box h2 {
+    font-size: 12px;
+    letter-spacing: 1px;
+    color: var(--dim);
+    text-transform: uppercase;
+    margin: 18px 0 6px;
+  }
+  .help-box p, .help-box li { color: var(--text); margin-bottom: 8px; }
+  .help-box ul { margin: 0 0 8px 18px; }
+  .help-box code {
+    color: var(--bright);
+    background: var(--panel2);
+    border: 1px solid var(--border2);
+    padding: 1px 5px;
+  }
+  .help-box b { color: var(--bright); }
+  .help-actions { display: flex; gap: 8px; margin-top: 18px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">FREEBUFF ADAPTER<small id="ver"></small></div>
+  <div class="controls">
+    <select id="modelSelect"></select>
+    <button id="admitBtn" title="Admit a session for the selected model">ADMIT</button>
+    <button id="releaseBtn" title="Release the session slot">RELEASE</button>
+    <button id="adsToggleBtn" title="Toggle ad rotation">ADS:ON</button>
+    <button id="helpBtn" title="Help: running safely (SmartScreen, security)">?</button>
+    <button id="loginBtn" class="primary">LOG IN</button>
+    <button id="logoutBtn" style="display:none">LOG OUT</button>
+  </div>
+  <div class="chips">
+    <span class="chip"><b id="chipDaemon">DAEMON …</b></span>
+    <span class="chip" id="chipAuth"><b>AUTH …</b></span>
+    <span class="chip" id="chipSession"><b>SESSION …</b></span>
+    <span class="chip" id="chipStreak"><b>STREAK …</b></span>
+    <span class="chip" id="chipAds"><b>ADS …</b></span>
+    <span class="chip" id="chipProxy"><b>PROXY …</b></span>
+  </div>
+</header>
+
+<main>
+  <section class="left">
+    <nav class="tabs" id="tabs">
+      <div class="tab active" data-pane="tasks">TASKS<span class="count" id="cntTasks">0</span></div>
+      <div class="tab" data-pane="reports">REPORTS<span class="count" id="cntReports">0</span></div>
+      <div class="tab" data-pane="logs">LOGS<span class="count" id="cntLogs">0</span></div>
+      <div class="tab" data-pane="errors">ERRORS<span class="count" id="cntErrors">0</span></div>
+      <div class="tab" data-pane="warnings">WARNINGS<span class="count" id="cntWarnings">0</span></div>
+    </nav>
+    <div class="pane active" id="pane-tasks"></div>
+    <div class="pane" id="pane-reports"></div>
+    <div class="pane" id="pane-logs"></div>
+    <div class="pane" id="pane-errors"></div>
+    <div class="pane" id="pane-warnings"></div>
+  </section>
+
+  <section class="right">
+    <h2>Ad viewer <span id="adsState" style="text-transform:none;letter-spacing:0"></span></h2>
+    <div class="ads" id="adsBox"><div class="ad-none">No ads yet — log in and the daemon starts rotating.</div></div>
+
+    <div class="proxy">
+      <div class="row"><span class="k">PROXY URL</span><code id="proxyUrl">…</code></div>
+      <div class="row"><span class="k">ANTHROPIC</span><code id="anthropicUrl">…</code></div>
+      <div class="row"><span class="k">API KEY</span><code id="proxyKey">—</code></div>
+      <div class="row"><span class="k">SESSION</span><code id="sessionLine">none</code></div>
+      <div class="row"><span class="k">INSTANCE ID</span><code id="instanceLine">—</code></div>
+      <div class="row"><span class="k">STREAK</span><code id="streakLine">—</code><button id="streakCheckBtn" title="Force a streak check-in now">CHECK</button></div>
+    </div>
+
+    <div class="chat">
+      <div class="chat-row">
+        <input type="text" id="chatInput" placeholder="Test the proxy: send a message…" autocomplete="off">
+        <button id="chatSend">SEND</button>
+      </div>
+      <div class="chat-out" id="chatOut"><span class="meta">Chat responses stream here through /v1/chat/completions.</span></div>
+    </div>
+  </section>
+</main>
+
+<div class="flash" id="flash"></div>
+
+<div class="overlay" id="helpOverlay">
+  <div class="help-box">
+    <h1>RUNNING SAFELY</h1>
+
+    <h2>Windows SmartScreen warning</h2>
+    <p>This app ships <b>unsigned</b> (code-signing certificates that Windows
+trusts cost money, so the project deliberately doesn't buy one). Windows will
+show <b>"Windows protected your PC"</b> / <b>"Unknown publisher"</b> the first
+time you run the installer or the portable exe. That warning is <b>expected</b>
+for this app — but verify before you dismiss it:</p>
+    <ul>
+      <li>You downloaded the file from this project's GitHub <b>Releases</b> page
+the version tag you intended, not from an email, chat link, or search ad.</li>
+      <li>The filename matches that release (e.g. <code>Freebuff Adapter Setup x.y.z.exe</code>).</li>
+      <li>You are on the machine that will actually use it.</li>
+    </ul>
+    <p>Then dismiss it safely:</p>
+    <ul>
+      <li>On the dialog: click <b>More info</b> → <b>Run anyway</b>.</li>
+      <li>Or in Explorer: right-click the file → <b>Properties</b> → tick
+<b>Unblock</b> → OK.</li>
+    </ul>
+
+    <h2>Why it's unsigned</h2>
+    <p>Trusted code-signing certs are paid (a CA cert or a cloud signing
+subscription). Free alternatives either aren't trusted by Windows (self-signed)
+or require project approval (SignPath's free OSS tier). So the app ships
+unsigned by design; the daemon itself has <b>zero runtime dependencies</b> and
+runs fine from <code>node src/index.js</code> if you prefer to skip the
+installer entirely.</p>
+
+    <h2>Security defaults</h2>
+    <ul>
+      <li>The daemon binds to <code>127.0.0.1</code> only — nothing is exposed
+to the network.</li>
+      <li>Your token is stored in <code>~/.config/freebuff-adapter/state.json</code>
+(mode 0600).</li>
+      <li>Set <code>FREEBUFF_PROXY_KEY</code> before binding to anything but
+loopback; the local UI is always exempt.</li>
+    </ul>
+
+    <div class="help-actions">
+      <button id="helpClose" class="primary">CLOSE</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="loginOverlay">
+  <div class="login-box">
+    <h1>FREEBUFF DEVICE-CODE LOGIN</h1>
+    <p id="loginExplain">The daemon will request a login code from freebuff.com, open your browser, and poll until you sign in. You can also paste the URL manually.</p>
+    <div id="loginUrlBox" style="display:none">
+      <span class="login-url" id="loginUrl"></span>
+      <div class="login-wait pulse" id="loginWait">Waiting for browser sign-in…</div>
+    </div>
+    <div class="login-actions">
+      <button id="loginStart" class="primary">START LOGIN</button>
+      <button id="loginCancel" style="display:none">CANCEL</button>
+      <button id="loginClose">CLOSE</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict'
+
+// ---------- tiny helpers ----------
+const $ = (id) => document.getElementById(id)
+const pad = (n) => String(n).padStart(2, '0')
+function hhmmss(iso) {
+  const d = new Date(iso)
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]))
+}
+function fmtFields(obj) {
+  if (!obj || typeof obj !== 'object') return ''
+  return Object.entries(obj)
+    .map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : v}`)
+    .join('  ')
+}
+
+// ---------- state ----------
+const state = {
+  user: null,
+  login: null,
+  session: null,
+  streak: null,
+  ads: { current: null, fetchedCount: 0, impressionsAt: {} },
+  settings: {},
+  config: {},
+  bus: { logs: [], errors: [], warnings: [], reports: [], tasks: [] },
+}
+const cap = (arr, n) => { if (arr.length > n) arr.splice(0, arr.length - n) }
+
+// ---------- tabs ----------
+$('tabs').addEventListener('click', (e) => {
+  const tab = e.target.closest('.tab')
+  if (!tab) return
+  document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'))
+  document.querySelectorAll('.pane').forEach((p) => p.classList.remove('active'))
+  tab.classList.add('active')
+  $('pane-' + tab.dataset.pane).classList.add('active')
+  renderAll()
+})
+
+// ---------- rendering ----------
+function renderChips() {
+  $('chipDaemon').innerHTML = `<b>DAEMON ${state.config.mock ? '(MOCK)' : 'RUN'}</b>`
+  if (state.user) {
+    $('chipAuth').innerHTML = `<b>AUTH ${esc(state.user.email || state.user.name || '?')}</b>`
+  } else if (state.login && state.login.status === 'pending') {
+    $('chipAuth').innerHTML = `<b>AUTH SIGNING IN…</b>`
+  } else {
+    $('chipAuth').innerHTML = `<b>AUTH NOT LOGGED IN</b>`
+  }
+  const s = state.session
+  if (s && s.status === 'active') {
+    const model = (s.model || '').split('/').pop()
+    $('chipSession').innerHTML = `<b>SESSION ${esc(model)} · <span id="sessCountdown">${fmtRemaining(s.remainingMs)}</span></b>`
+  } else if (s && s.status !== 'none') {
+    $('chipSession').innerHTML = `<b>SESSION ${esc(s.status)}</b>`
+  } else {
+    $('chipSession').innerHTML = `<b>SESSION NONE</b>`
+  }
+  const st = state.streak
+  $('chipStreak').innerHTML =
+    st && typeof st.value === 'number'
+      ? `<b>STREAK ${st.value}${st.checkedToday ? ' ✓' : ''}</b>`
+      : '<b>STREAK —</b>'
+  $('chipAds').innerHTML = `<b>ADS ${state.settings.adsEnabled ? 'ON' : 'OFF'}</b>`
+  $('adsToggleBtn').textContent = `ADS:${state.settings.adsEnabled ? 'ON' : 'OFF'}`
+  $('chipProxy').innerHTML = `<b>PROXY ${state.config.host || '127.0.0.1'}:${state.config.port || '?'}/v1</b>`
+}
+
+function fmtRemaining(ms) {
+  if (ms == null) return '--:--'
+  const s = Math.max(0, Math.floor(ms / 1000))
+  return `${pad(Math.floor(s / 60))}:${pad(s % 60)}`
+}
+
+function renderLine(entry) {
+  const cls = entry.level === 'error' ? 'error' : entry.level === 'warn' ? 'warn' : 'info'
+  const lvl = entry.level === 'error' ? '!ERR' : entry.level === 'warn' ? '!WRN' : entry.level.toUpperCase().padEnd(4)
+  return `<div class="line ${cls}"><span class="t">${hhmmss(entry.ts)}</span><span class="lvl">${lvl}</span>${esc(entry.message)}` +
+    (entry.data && Object.keys(entry.data).length ? ` <span class="data">${esc(fmtFields(entry.data))}</span>` : '') + `</div>`
+}
+
+function renderPane(kind) {
+  const el = $('pane-' + kind)
+  let html
+  if (kind === 'tasks') {
+    const tasks = [...state.bus.tasks].reverse()
+    html = tasks.length ? tasks.map((t) => {
+      const cls = t.status
+      const status = t.status === 'done' ? '✓ DONE' : t.status === 'error' ? '! FAILED' : '… ' + (t.status || 'running')
+      const detail = t.detail ? ` · ${esc(t.detail)}` : ''
+      return `<div class="task ${cls}"><span class="tname">${esc(t.name)}</span><span class="tstatus">${status}</span>` +
+        `<span class="tdetail">${detail}</span><span class="tm">${hhmmss(t.startedAt)}${t.endedAt ? '→' + hhmmss(t.endedAt) : ''}</span></div>`
+    }).join('') : '<div class="empty">No tasks yet.</div>'
+  } else if (kind === 'reports') {
+    const reports = [...state.bus.reports].reverse()
+    html = reports.length ? reports.map((r) =>
+      `<div class="line report"><span class="t">${hhmmss(r.ts)}</span><span class="name">${esc(r.name.toUpperCase())}</span> <span class="fields">${esc(fmtFields(omit(r, ['id', 'ts', 'name'])))}</span></div>`
+    ).join('') : '<div class="empty">No reports yet.</div>'
+  } else if (kind === 'errors') {
+    html = state.bus.errors.length ? [...state.bus.errors].reverse().map(renderLine).join('') : '<div class="empty">No errors.</div>'
+  } else if (kind === 'warnings') {
+    html = state.bus.warnings.length ? [...state.bus.warnings].reverse().map(renderLine).join('') : '<div class="empty">No warnings.</div>'
+  } else {
+    html = state.bus.logs.length ? [...state.bus.logs].reverse().map(renderLine).join('') : '<div class="empty">No log lines yet.</div>'
+  }
+  el.innerHTML = html
+  const nearBottom = el.scrollTop + el.clientHeight > el.scrollHeight - 40
+  if (nearBottom) el.scrollTop = el.scrollHeight
+}
+
+function omit(obj, keys) {
+  const out = {}
+  for (const [k, v] of Object.entries(obj || {})) if (!keys.includes(k)) out[k] = v
+  return out
+}
+
+function renderCounts() {
+  $('cntTasks').textContent = state.bus.tasks.length
+  $('cntReports').textContent = state.bus.reports.length
+  $('cntLogs').textContent = state.bus.logs.length
+  $('cntErrors').textContent = state.bus.errors.length
+  $('cntWarnings').textContent = state.bus.warnings.length
+}
+
+function renderAds() {
+  const ads = state.ads.current
+  const box = $('adsBox')
+  if (!ads || ads.length === 0) {
+    box.innerHTML = '<div class="ad-none">No ads yet — log in and the daemon starts rotating.</div>'
+    return
+  }
+  const fetched = state.ads.fetchedCount
+  const shown = fetched > ads.length ? `shown of ${fetched}` : 'shown'
+  $('adsState').textContent = `· ${ads.length} ${shown} · ${state.ads.impressionsFiredCount ?? 0} impressions`
+  box.innerHTML = ads.map((ad) => {
+    const impAt = state.ads.impressionsAt && state.ads.impressionsAt[ad.impUrl]
+    const meta = impAt
+      ? `<span class="ok">impression ✓ ${hhmmss(impAt)}</span>`
+      : 'impression pending'
+    return `<div class="ad-card">
+      <div class="ad-title">▮ ${esc(ad.title)}</div>
+      <div class="ad-text">${esc(ad.adText)}</div>
+      <div class="ad-actions">
+        ${ad.url ? `<button class="ad-cta" data-url="${esc(ad.url)}" data-imp="${esc(ad.impUrl)}">${esc(ad.cta || 'OPEN')} ↗</button>` : ''}
+        <span class="ad-meta">${meta} · ${esc(ad.provider || 'gravity')}</span>
+      </div>
+    </div>`
+  }).join('')
+}
+
+function renderSessionLine() {
+  const s = state.session
+  if (s && s.status === 'active') {
+    $('sessionLine').textContent = `${s.model} · expires ${s.expiresAt ? new Date(s.expiresAt).toLocaleTimeString() : '?'}`
+    $('instanceLine').textContent = s.instanceId || '—'
+  } else {
+    $('sessionLine').textContent = s ? `status: ${s.status}` : 'none'
+    $('instanceLine').textContent = '—'
+  }
+}
+
+function renderProxy() {
+  const base = `${state.config.host || '127.0.0.1'}:${state.config.port || '8899'}`
+  $('proxyUrl').textContent = `http://${base}/v1`
+  $('anthropicUrl').textContent = `http://${base}/v1/messages`
+  $('proxyKey').textContent = state.config.proxyKeySet ? 'set (see env FREEBUFF_PROXY_KEY)' : '— (open on localhost)'
+  const st = state.streak
+  $('streakLine').textContent = st && typeof st.value === 'number'
+    ? `${st.value}-day streak${st.checkedAt ? ' · checked ' + hhmmss(st.checkedAt) : ''}`
+    : 'not checked in yet'
+}
+
+// When the user dismisses the login overlay, don't re-show it on every SSE
+// event (log lines, session polls, ad rotations) — only when they log in,
+// log out, or explicitly open it again.
+let loginDismissed = false
+
+function renderLoginOverlay() {
+  const ov = $('loginOverlay')
+  // Swap the header buttons first: when logged in, LOG OUT must be visible and
+  // LOG IN hidden (and vice versa). This runs even when the overlay stays
+  // hidden, so the buttons always match state.user.
+  $('loginBtn').style.display = state.user ? 'none' : 'inline-block'
+  $('logoutBtn').style.display = state.user ? 'inline-block' : 'none'
+  if (state.user) { loginDismissed = false; ov.classList.remove('visible'); return }
+  if (loginDismissed) return
+  ov.classList.add('visible')
+  const pending = state.login && state.login.status === 'pending'
+  $('loginUrlBox').style.display = pending ? 'block' : 'none'
+  if (pending) {
+    $('loginUrl').textContent = state.login.loginUrl
+    $('loginWait').textContent = `Waiting for browser sign-in… attempt ${state.login.attempts || 0}`
+    $('loginStart').style.display = 'none'
+    $('loginCancel').style.display = 'inline-block'
+    $('loginExplain').textContent = 'Open the URL below (or use the browser that was launched) and sign in with your Freebuff account.'
+  } else {
+    $('loginStart').style.display = 'inline-block'
+    $('loginCancel').style.display = 'none'
+    $('loginExplain').textContent = state.config.mock
+      ? 'Mock mode: login auto-approves after a couple of polls.'
+      : 'The daemon will request a login code from freebuff.com, open your browser, and poll until you sign in. You can also paste the URL manually.'
+  }
+  $('loginBtn').style.display = state.user ? 'none' : 'inline-block'
+  $('logoutBtn').style.display = state.user ? 'inline-block' : 'none'
+  if (state.user) $('loginBtn').textContent = 'LOG IN'
+}
+
+function renderAll() {
+  renderChips()
+  renderCounts()
+  const activeTab = document.querySelector('.tab.active')?.dataset.pane || 'tasks'
+  renderPane(activeTab)
+  renderAds()
+  renderSessionLine()
+  renderProxy()
+  renderLoginOverlay()
+}
+
+// ---------- model select ----------
+function renderModels() {
+  const sel = $('modelSelect')
+  sel.innerHTML = state.models.map((m) =>
+    `<option value="${esc(m.id)}"${m.id === state.settings.model ? ' selected' : ''}>${esc(m.id)}</option>`
+  ).join('')
+}
+
+// ---------- SSE ----------
+function connectSse() {
+  const es = new EventSource('/api/events')
+  es.onmessage = (ev) => {
+    let msg
+    try { msg = JSON.parse(ev.data) } catch { return }
+    applyEvent(msg)
+  }
+  es.onerror = () => { /* EventSource auto-reconnects */ }
+}
+
+function applyEvent(msg) {
+  switch (msg.type) {
+    case 'state':
+      state.state = msg.state
+      state.login = msg.state.login
+      state.session = msg.state.session
+      state.streak = msg.state.streak
+      state.ads.current = msg.state.ads.current
+      state.ads.fetchedCount = msg.state.ads.fetchedCount
+      state.ads.impressionsAt = msg.state.ads.impressionsAt || {}
+      state.ads.impressionsFiredCount = msg.state.ads.impressionsFiredCount
+      break
+    case 'auth':
+      state.user = msg.user
+      break
+    case 'ads':
+      if (msg.ads) state.ads.current = msg.ads
+      break
+    case 'log':
+      state.bus.logs.push(msg.entry); cap(state.bus.logs, 600)
+      break
+    case 'warning':
+      state.bus.warnings.push(msg.entry); cap(state.bus.warnings, 200)
+      state.bus.logs.push(msg.entry); cap(state.bus.logs, 600)
+      break
+    case 'error':
+      state.bus.errors.push(msg.entry); cap(state.bus.errors, 200)
+      state.bus.logs.push(msg.entry); cap(state.bus.logs, 600)
+      break
+    case 'report':
+      state.bus.reports.push(msg.entry); cap(state.bus.reports, 200)
+      break
+    case 'task':
+      state.bus.tasks = state.bus.tasks.filter((t) => t.id !== msg.entry.id)
+      state.bus.tasks.push(msg.entry)
+      cap(state.bus.tasks, 100)
+      break
+    default:
+      return
+  }
+  renderAll()
+}
+
+// ---------- actions ----------
+let flashTimer = null
+function flash(msg, isError = true) {
+  const el = $('flash')
+  el.textContent = msg
+  el.className = 'flash' + (isError ? ' err' : '')
+  el.classList.add('show')
+  clearTimeout(flashTimer)
+  flashTimer = setTimeout(() => el.classList.remove('show'), 4000)
+}
+
+async function api(path, method = 'POST', body) {
+  let res
+  try {
+    res = await fetch(path, {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    })
+  } catch (err) {
+    flash(`! ${path} — ${err.message}`)
+    return {}
+  }
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    flash(`! ${res.status} ${path} — ${data.error?.message || res.statusText}`)
+  }
+  return data
+}
+
+$('helpBtn').addEventListener('click', () => {
+  $('helpOverlay').classList.add('visible')
+})
+$('helpClose').addEventListener('click', () => {
+  $('helpOverlay').classList.remove('visible')
+})
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') $('helpOverlay').classList.remove('visible')
+})
+
+$('loginBtn').addEventListener('click', () => {
+  if (state.user) return
+  loginDismissed = false
+  $('loginOverlay').classList.add('visible')
+  renderLoginOverlay()
+})
+$('loginStart').addEventListener('click', async () => {
+  const out = await api('/api/login')
+  if (out.loginUrl) {
+    // daemon already opened the browser; show the URL too
+    fetch('/api/state').then((r) => r.json()).then((s) => {
+      state.state = s.state; state.login = s.state.login
+      state.ads.impressionsFiredCount = s.state.ads.impressionsFiredCount
+      renderAll()
+    })
+  }
+})
+$('loginCancel').addEventListener('click', async () => {
+  await api('/api/login/cancel')
+})
+$('loginClose').addEventListener('click', () => {
+  if (state.login && state.login.status === 'pending') return
+  loginDismissed = true
+  $('loginOverlay').classList.remove('visible')
+})
+$('logoutBtn').addEventListener('click', async () => {
+  await api('/api/logout')
+})
+
+$('admitBtn').addEventListener('click', async () => {
+  const model = $('modelSelect').value
+  await api('/api/session/admit', 'POST', { model })
+})
+$('releaseBtn').addEventListener('click', async () => {
+  await api('/api/session/release')
+})
+$('streakCheckBtn').addEventListener('click', async () => {
+  await api('/api/streak/check')
+})
+$('adsToggleBtn').addEventListener('click', async () => {
+  const next = !state.settings.adsEnabled
+  await api('/api/settings', 'POST', { adsEnabled: next })
+  state.settings.adsEnabled = next
+  renderAll()
+})
+$('modelSelect').addEventListener('change', async () => {
+  await api('/api/settings', 'POST', { model: $('modelSelect').value })
+  state.settings.model = $('modelSelect').value
+})
+
+$('adsBox').addEventListener('click', async (e) => {
+  const btn = e.target.closest('.ad-cta')
+  if (!btn) return
+  const { url, imp } = btn.dataset
+  await api('/api/ads/click', 'POST', { impUrl: imp })
+  window.open(url, '_blank')
+})
+
+// ---------- test chat ----------
+$('chatSend').addEventListener('click', () => sendChat())
+$('chatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat() })
+
+async function sendChat() {
+  const input = $('chatInput')
+  const text = input.value.trim()
+  if (!text) return
+  const model = $('modelSelect').value
+  const out = $('chatOut')
+  const session = state.session
+  out.innerHTML = `<span class="meta">→ ${esc(model)} · injected freebuff_instance_id: ${esc(session && session.instanceId ? session.instanceId : '(none yet)')}</span>\n\n`
+  input.value = ''
+  $('chatSend').disabled = true
+  try {
+    const res = await fetch('/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: text }], stream: true }),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      out.innerHTML += `\n!ERR HTTP ${res.status}: ${esc(body.error?.message || 'request failed')}`
+      return
+    }
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buf = ''
+    let answer = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += decoder.decode(value, { stream: true })
+      const parts = buf.split('\n')
+      buf = parts.pop()
+      for (const line of parts) {
+        if (!line.startsWith('data:')) continue
+        const payload = line.slice(5).trim()
+        if (!payload || payload === '[DONE]') continue
+        try {
+          const parsed = JSON.parse(payload)
+          const delta = parsed.choices?.[0]?.delta?.content
+          if (delta) {
+            answer += delta
+            out.innerHTML = out.innerHTML.replace(/<span class="stream">[\s\S]*?<\/span>$/, '') + `<span class="stream">${esc(answer)}</span>`
+            out.scrollTop = out.scrollHeight
+          }
+        } catch { /* ignore */ }
+      }
+    }
+    out.innerHTML += `\n\n<span class="meta">✓ stream complete (${answer.length} chars)</span>`
+  } catch (err) {
+    out.innerHTML += `\n!ERR ${esc(err.message)}`
+  } finally {
+    $('chatSend').disabled = false
+  }
+}
+
+// ---------- session countdown ----------
+setInterval(() => {
+  const el = $('sessCountdown')
+  if (!el) return
+  const s = state.session
+  const live = state.session && state.session.status === 'active'
+  if (live) {
+    // refresh remainingMs locally each second
+    el.textContent = fmtRemaining(s.remainingMs)
+    if (state.session.remainingMs != null) {
+      state.session.remainingMs = Math.max(0, state.session.remainingMs - 1000)
+    }
+  } else {
+    el.textContent = '--:--'
+  }
+}, 1000)
+
+// ---------- boot ----------
+fetch('/api/state').then((r) => r.json()).then((s) => {
+  state.config = s.config
+  state.user = s.user
+  state.settings = s.settings
+  state.models = s.models
+  state.state = s.state
+  state.login = s.state.login
+  state.session = s.state.session
+  state.streak = s.state.streak
+  state.ads.current = s.state.ads.current
+  state.ads.fetchedCount = s.state.ads.fetchedCount
+  state.ads.impressionsAt = s.state.ads.impressionsAt || {}
+  state.ads.impressionsFiredCount = s.state.ads.impressionsFiredCount
+  state.bus = s.bus
+  $('ver').textContent = 'v' + s.version
+  renderModels()
+  renderAll()
+  connectSse()
+}).catch(() => {
+  document.body.innerHTML = '<div style="padding:40px;color:#c9c9c9">Cannot reach the daemon. Start it with: node src/index.js</div>'
+})
+</script>
+</body>
+</html>
