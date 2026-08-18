@@ -27,7 +27,7 @@ const os = require('node:os')
  * backoff + jitter on 408/429/500/502/503/504 and network errors.
  */
 
-const ADAPTER_VERSION = '0.1.0'
+const ADAPTER_VERSION = '0.1.1'
 
 const SDK_UA = 'ai-sdk/openai-compatible/1.0.0/codebuff'
 

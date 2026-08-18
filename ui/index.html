@@ -88,7 +88,7 @@
     min-height: 0;
   }
   .left { display: flex; flex-direction: column; min-width: 0; border-right: 1px solid var(--border); }
-  .right { display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
+  .right { display: flex; flex-direction: column; min-width: 0; background: var(--bg); overflow-y: auto; }
 
   /* ---- tabs ---- */
   .tabs { display: flex; border-bottom: 1px solid var(--border); background: var(--panel); }
@@ -153,7 +153,11 @@
     border-bottom: 1px solid var(--border2);
     text-transform: uppercase;
   }
-  .ads { flex: 1; overflow-y: auto; padding: 8px 12px; display: flex; flex-direction: column; gap: 8px; }
+  /* Size to the ads actually shown (daemon caps at MAX_AD_VIEW=3) instead of
+     stretching to fill the column. Sections keep their natural height
+     (flex-shrink: 0) so a short window scrolls the right column as a whole
+     instead of squeezing the cards or hiding the proxy/chat below. */
+  .ads { flex: 0 0 auto; overflow-y: auto; padding: 8px 12px; display: flex; flex-direction: column; gap: 8px; }
   .ad-card {
     border: 1px solid var(--border);
     background: var(--panel);
@@ -171,11 +175,12 @@
     border-top: 1px solid var(--border);
     padding: 8px 12px;
     font-size: 12px;
+    flex: 0 0 auto;
   }
   .proxy .row { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
   .proxy .row .k { color: var(--dim); min-width: 92px; }
   .proxy code { color: var(--bright); background: var(--panel2); border: 1px solid var(--border2); padding: 1px 6px; }
-  .chat { border-top: 1px solid var(--border); padding: 8px 12px; }
+  .chat { border-top: 1px solid var(--border); padding: 8px 12px; flex: 0 0 auto; }
   .chat .chat-row { display: flex; gap: 6px; }
   .chat input { flex: 1; }
   .chat-out {

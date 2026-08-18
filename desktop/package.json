@@ -1,6 +1,6 @@
 {
   "name": "freebuff-adapter-desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Electron shell for Freebuff Adapter: auto-starts the local daemon and opens the monochrome dark UI window.",
   "main": "main.js",
   "author": "Freebuff Adapter",

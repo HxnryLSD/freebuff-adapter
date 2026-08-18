@@ -1,6 +1,6 @@
 {
   "name": "freebuff-adapter",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local Freebuff daemon: device-code login, session admission, ad impressions, and an OpenAI-compatible /v1/chat/completions proxy with a monochrome dark UI ad viewer.",
   "type": "commonjs",
   "main": "src/index.js",
